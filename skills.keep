@@ -1,0 +1,16 @@
+# Skills to link into ~/.agents/skills. One name per line.
+# sync.sh links only these. New upstream skills are reported, never linked.
+code-review
+codebase-design
+diagnosing-bugs
+domain-modeling
+grill-me
+grilling
+handoff
+implement
+improve-codebase-architecture
+setup-matt-pocock-skills
+tdd
+to-spec
+to-tickets
+wait-what
