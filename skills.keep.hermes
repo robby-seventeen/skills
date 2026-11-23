@@ -1,0 +1,13 @@
+# Skills to link into the Hermes Agent skills dir (mattpocock/ namespace).
+# One name per line. sync.sh --target hermes links only these.
+# Hermes is the planning layer: specs, tickets, grilling, handoff, design vocabulary.
+# Code-touching skills (implement, tdd, code-review, diagnosing-bugs,
+# improve-codebase-architecture) stay in OpenCode inside the repo.
+codebase-design
+domain-modeling
+grill-me
+grilling
+handoff
+to-spec
+to-tickets
+wait-what
