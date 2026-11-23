@@ -6,12 +6,15 @@
 #   ./sync.sh --merge   Also merge upstream/main, keeping our skill deletions.
 #
 # Only skills named in skills.keep are linked into ~/.agents/skills.
+# Kept skills marked disable-model-invocation also get an OpenCode slash
+# command wrapper in ~/.config/opencode/commands, regenerated on every run.
 
 set -euo pipefail
 export LC_ALL=C  # stable sort order for comm
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LINK_DIR="${AGENT_SKILLS_LINK_DIR:-$HOME/.agents/skills}"
+CMD_DIR="${OPENCODE_COMMANDS_DIR:-$HOME/.config/opencode/commands}"
 KEEP_FILE="$REPO/skills.keep"
 UPSTREAM_REF="upstream/main"
 
@@ -72,6 +75,76 @@ link_skills() {
     fi
   done
   [[ "$removed" == 1 ]] || echo "  none"
+
+  sync_commands
+}
+
+# The body line every generated command wrapper carries. It is also how we
+# recognize a wrapper as ours, so files written by hand are never touched.
+wrapper_body() {
+  echo "Read ~/.agents/skills/$1/SKILL.md, including any files it references relative to its folder, and follow it exactly. Input: \$ARGUMENTS"
+}
+
+is_our_wrapper() {
+  local file="$1" name
+  name="$(basename "$file" .md)"
+  grep -qxF -- "$(wrapper_body "$name")" "$file"
+}
+
+# Print a SKILL.md frontmatter block (between the first two --- lines).
+frontmatter() {
+  awk 'NR == 1 && /^---$/ {f = 1; next} f && /^---$/ {exit} f' "$1"
+}
+
+# OpenCode hides user-invoked-only skills from the model, so they get a
+# slash command wrapper in OpenCode's global commands folder.
+sync_commands() {
+  local keep name dir fm desc file tmp wanted=""
+  keep="$(keep_list)"
+  mkdir -p "$CMD_DIR"
+
+  echo "== Command wrappers for user-invoked skills in $CMD_DIR"
+  while read -r name; do
+    dir="$(skill_dirs | awk -F/ -v n="$name" '$NF == n' | head -n1)"
+    [[ -n "$dir" ]] || continue
+    fm="$(frontmatter "$REPO/$dir/SKILL.md")"
+    grep -qE '^disable-model-invocation:[[:space:]]*true[[:space:]]*$' <<< "$fm" || continue
+    # Copy the description line as written, so its YAML quoting stays valid.
+    desc="$(grep -m1 '^description:' <<< "$fm" || true)"
+    if [[ -z "$desc" ]]; then
+      echo "  SKIP     $name (no description in frontmatter)"
+      continue
+    fi
+    wanted+="$name"$'\n'
+    file="$CMD_DIR/$name.md"
+    if [[ -e "$file" ]] && ! is_our_wrapper "$file"; then
+      echo "  SKIP     $name (a command file not made by sync.sh exists)"
+      continue
+    fi
+    tmp="$(mktemp)"
+    printf -- '---\n%s\n---\n%s\n' "$desc" "$(wrapper_body "$name")" > "$tmp"
+    if [[ -e "$file" ]] && cmp -s "$tmp" "$file"; then
+      rm "$tmp"
+      echo "  ok       /$name"
+    else
+      mv "$tmp" "$file"
+      chmod 644 "$file"
+      echo "  wrote    /$name"
+    fi
+  done <<< "$keep"
+
+  local removed=0
+  for file in "$CMD_DIR"/*.md; do
+    [[ -e "$file" ]] || continue
+    name="$(basename "$file" .md)"
+    is_our_wrapper "$file" || continue
+    if ! grep -qxF -- "$name" <<< "$wanted"; then
+      rm "$file"
+      echo "  removed  /$name (no longer a kept user-invoked skill)"
+      removed=1
+    fi
+  done
+  [[ "$removed" == 1 ]] || true
 }
 
 report_unkept() {
